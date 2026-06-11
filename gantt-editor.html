@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gantt-Diagramm Editor</title>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; font-size: 14px; background: #f0f2f5; color: #222; min-height: 100vh; }
+
+  header {
+    background: #1a3a5c; color: #fff;
+    padding: 10px 24px; font-size: 18px; font-weight: 600;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .bar-toggle-btn {
+    background: none; border: 1px solid #3a6a9c; color: #90aabf;
+    border-radius: 5px; cursor: pointer; font-size: 12px; padding: 3px 10px;
+    display: flex; align-items: center; gap: 5px;
+    transition: background .15s, color .15s;
+    white-space: nowrap;
+  }
+  .bar-toggle-btn:hover { background: #2a5a8c; color: #fff; }
+
+  /* Setup banner */
+  #setup-banner {
+    background: #fff8e1; border-bottom: 2px solid #ffc107;
+    padding: 9px 24px; font-size: 12.5px; color: #795548;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  #setup-banner a { color: #1a3a5c; font-weight: 600; }
+  #setup-banner code { background: rgba(0,0,0,.07); border-radius: 3px; padding: 1px 5px; font-size: 12px; }
+
+  /* Sync status */
+  #sync-status {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 12px; color: #c8d8e8; font-weight: normal;
+    margin-left: auto;
+  }
+  #sync-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #ccc;
+    flex-shrink: 0; transition: background .3s;
+  }
+  #sync-dot.ok    { background: #27ae60; }
+  #sync-dot.busy  { background: #f39c12; }
+  #sync-dot.error { background: #e74c3c; }
+  #sync-dot.local { background: #95a5a6; }
+
+  /* Project bar */
+  .project-bar {
+    background: #223f60; color: #fff;
+    padding: 8px 24px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    border-bottom: 2px solid #1a3a5c;
+    overflow: hidden;
+    transition: max-height .25s ease, padding .25s ease, border-width .25s ease;
+    max-height: 200px;
+  }
+  .project-bar.collapsed {
+    max-height: 0; padding-top: 0; padding-bottom: 0; border-bottom-width: 0;
+  }
+  .project-bar label { font-size: 12px; color: #90aabf; white-space: nowrap; }
+  .project-bar select {
+    padding: 5px 8px; border: 1px solid #4a6a8a; border-radius: 5px;
+    font-size: 13px; background: #1a3a5c; color: #fff; min-width: 160px; cursor: pointer;
+  }
+  .project-bar input[type="text"] {
+    padding: 5px 8px; border: 1px solid #4a6a8a; border-radius: 5px;
+    font-size: 13px; background: #1a3a5c; color: #fff; width: 200px;
+  }
+  .project-bar input[type="text"]::placeholder { color: #6a8aaa; }
+  .btn-sm { padding: 5px 10px !important; font-size: 12px !important; }
+  .btn-danger { background: #922b21; color: #fff; }
+
+  .layout { display: flex; padding: 16px; min-height: calc(100vh - 100px); align-items: flex-start; }
+  .panel { width: 420px; flex-shrink: 0; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); padding: 16px; display: flex; flex-direction: column; gap: 16px; height: fit-content; }
+  .resizer { width: 16px; cursor: col-resize; display: flex; align-items: center; justify-content: center; flex-shrink: 0; align-self: stretch; margin: 0 4px; }
+  .resizer::after { content: ''; width: 4px; height: 32px; background: #d0d7de; border-radius: 2px; transition: background 0.2s; }
+  .resizer:hover::after, .resizer.active::after { background: #2980b9; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: #666; margin-bottom: 4px; }
+
+  .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  label { display: block; font-size: 12px; color: #555; margin-bottom: 3px; }
+  input[type="text"], input[type="date"], input[type="number"], select {
+    width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 5px; font-size: 13px; background: #fafafa;
+  }
+  input[type="color"] { padding: 2px 4px; height: 30px; width: 38px; cursor: pointer; border: 1px solid #ccc; border-radius: 5px; }
+  input:disabled { background: #f0f0f0 !important; color: #aaa !important; cursor: not-allowed !important; border-color: #ddd !important; }
+
+  /* Table */
+  .task-table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { background: #f0f2f5; padding: 6px 8px; text-align: left; font-weight: 600; color: #444; border-bottom: 2px solid #ddd; white-space: nowrap; }
+  td { padding: 3px 4px; border-bottom: 1px solid #eee; vertical-align: middle; }
+  td input[type="text"], td input[type="date"] { padding: 4px 6px; font-size: 12px; border-radius: 4px; }
+  td input[type="color"] { width: 34px; height: 24px; padding: 1px 2px; }
+
+  tr.group-header-row { background: #dceaf5; }
+  tr.group-header-row td { padding: 5px 5px; border-bottom: 2px solid #b0cde0; }
+  tr.group-header-row input[type="text"] { font-weight: 700; font-size: 12px; background: rgba(255,255,255,.6); border-color: #a0c0d8; width: 130px; }
+
+  tr.section-header-row td { background: #f5f5f5; color: #aaa; font-size: 11px; padding: 3px 8px; font-style: italic; }
+
+  .indent-cell { padding-left: 18px !important; }
+  .indent-mark { color: #bbb; margin-right: 2px; font-size: 10px; }
+
+  .drag-handle { cursor: grab; color: #ccc; font-size: 16px; user-select: none; }
+  .drag-handle:active { cursor: grabbing; }
+  tr.dragging { opacity: .35; }
+  tr.drag-over-group td { background: #c8e0ff !important; outline: 2px dashed #2980b9; }
+  tr.drag-over-task td { border-top: 2px solid #2980b9 !important; }
+
+  .btn-icon { background: none; border: none; cursor: pointer; font-size: 15px; padding: 2px 4px; border-radius: 4px; color: #999; transition: color .15s, background .15s; }
+  .btn-icon:hover { color: #c0392b; background: #fdecea; }
+  .btn { display: inline-flex; align-items: center; gap: 5px; padding: 7px 13px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: filter .15s; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn-primary   { background: #1a3a5c; color: #fff; }
+  .btn-secondary { background: #e8ecf0; color: #333; }
+  .btn-success   { background: #27ae60; color: #fff; }
+  .btn-warning   { background: #e67e22; color: #fff; }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .preview-panel { flex-grow: 1; flex-basis: 0; min-width: 0; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); padding: 16px; display: flex; flex-direction: column; gap: 12px; align-self: stretch; }
+  #svg-container { overflow: auto; border: 1px solid #e0e0e0; border-radius: 6px; background: #fafafa; flex: 1; }
+  #svg-container svg { display: block; }
+  
+  .segment-row { display:flex; gap:4px; align-items:center; margin-bottom:4px; }
+  @media (max-width: 900px) { 
+    .layout { flex-direction: column; } 
+    .panel { width: 100% !important; }
+    .resizer { display: none; }
+    .settings-grid { grid-template-columns: 1fr; } 
+  }
+</style>
+</head>
+<body>
+<header>
+  <span>Gantt-Diagramm Editor</span>
+  <div id="sync-status">
+    <span id="sync-dot"></span>
+    <span id="sync-msg">Wird geladen …</span>
+    <button id="reload-btn" class="btn btn-secondary btn-sm" onclick="reloadFromDB()" style="display:none">&#8635; Aktualisieren</button>
+  </div>
+  <button class="bar-toggle-btn" id="bar-toggle-btn" onclick="toggleProjectBar()" title="Projektleiste ein-/ausblenden">
+    <span id="bar-toggle-icon">▴</span> Projektleiste
+  </button>
+</header>
+
+<!-- Banner für lokalen Server -->
+<div id="setup-banner" style="display:none">
+  <strong>⚙ Server nicht erreichbar</strong>
+  &nbsp;– Daten werden nur lokal in Ihrem Browser gespeichert.
+  Bitte starten Sie <code>python server.py</code> um die Daten dauerhaft zu sichern.
+</div>
+
+<!-- Project bar -->
+<div class="project-bar" id="project-bar">
+  <label>Projekt:</label>
+  <select id="project-select" onchange="switchProject(this.value)"></select>
+  <label style="margin-left:8px">Name:</label>
+  <input type="text" id="project-name" placeholder="Projektname" oninput="renameCurrentProject(this.value)">
+  <button class="btn btn-primary btn-sm" onclick="newProject()">+ Neues Projekt</button>
+  <button class="btn btn-danger btn-sm" onclick="deleteCurrentProject()">Projekt löschen</button>
+</div>
+
+<div class="layout">
+  <div class="panel" id="left-panel">
+
+    <div>
+      <h2>Diagramm-Einstellungen</h2>
+      <div class="settings-grid" style="margin-top:8px">
+        <div><label>Titel</label><input type="text" id="chart-title" value="Projektplan" oninput="render()"></div>
+        <div><label>Zeiteinheit</label>
+          <select id="time-unit" onchange="render()">
+            <option value="day">Tage</option>
+            <option value="week" selected>Wochen</option>
+            <option value="month">Monate</option>
+          </select>
+        </div>
+        <div><label>Startdatum (Achse)</label><input type="date" id="axis-start" oninput="render()"></div>
+        <div><label>Enddatum (Achse)</label><input type="date" id="axis-end" oninput="render()"></div>
+        <div><label>Balkenfarbe (Standard)</label><input type="color" id="default-color" value="#2980b9" oninput="render()" style="width:100%;height:32px"></div>
+        <div><label>Schriftgröße</label><input type="number" id="font-size" value="12" min="8" max="20" oninput="render()"></div>
+        <div><label>Zeilenhöhe px</label><input type="number" id="row-height" value="32" min="20" max="60" oninput="render()"></div>
+        <div><label>Labelbreite px</label><input type="number" id="label-width" value="180" min="80" max="400" oninput="render()"></div>
+      </div>
+    </div>
+
+    <div>
+      <h2>Gruppen &amp; Aufgaben</h2>
+      <p style="font-size:11px;color:#999;margin-bottom:6px">Aufgaben per Drag &amp; Drop auf eine Gruppe oder „Ohne Gruppe" ziehen</p>
+      <div class="task-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:20px"></th>
+              <th>Bezeichnung</th>
+              <th>Zeiträume (Start &ndash; Ende)</th>
+              <th style="width:36px">Farbe</th>
+              <th style="width:22px"></th>
+            </tr>
+          </thead>
+          <tbody id="task-body"></tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px" class="btn-row">
+        <button class="btn btn-primary"   onclick="addTask()">+ Aufgabe</button>
+        <button class="btn btn-secondary" onclick="addGroup()">+ Gruppe</button>
+        <button class="btn btn-secondary" onclick="importCSV()">CSV importieren</button>
+        <input type="file" id="csv-input" accept=".csv" style="display:none" onchange="handleCSV(event)">
+      </div>
+    </div>
+
+    <div>
+      <h2>Export</h2>
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn btn-success" onclick="exportSVG()">SVG herunterladen</button>
+        <button class="btn btn-warning" onclick="exportPNG()">PNG herunterladen</button>
+      </div>
+    </div>
+
+  </div>
+  
+  <!-- Resizer -->
+  <div class="resizer" id="layout-resizer"></div>
+
+  <div class="preview-panel">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <strong>Vorschau</strong>
+      <span style="font-size:12px;color:#aaa">Wird live aktualisiert</span>
+    </div>
+    <div id="svg-container"></div>
+  </div>
+</div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+
+let groups = [];
+let tasks  = [];
+let nextId = 10;
+let dragTaskId = null;
+let dbState    = null;
+let saveTimer  = null;
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function isValidRenderDate(d) {
+  return d && d instanceof Date && !isNaN(d.getTime()) && d.getFullYear() >= 1000 && d.getFullYear() <= 3000;
+}
+
+function parseDate(s) { return s ? new Date(s + 'T00:00:00') : null; }
+function fmtDate(d)   { if (!d || isNaN(d.getTime())) return ''; return d.toISOString().slice(0, 10); }
+function addDays(d,n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function escXML(s)    { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function shortDate(s) {
+  if (!s) return '—';
+  const d = parseDate(s);
+  if (!isValidRenderDate(d)) return '—';
+  return d.toLocaleDateString('de-DE', {day:'2-digit',month:'2-digit'});
+}
+
+function minTaskDate(arr) { return arr.flatMap(t => t.segments||[]).reduce((m,s) => s.start && (!m || s.start < m) ? s.start : m, null); }
+function maxTaskDate(arr) { return arr.flatMap(t => t.segments||[]).reduce((m,s) => s.end   && (!m || s.end   > m) ? s.end   : m, null); }
+
+function startOf(d, unit) {
+  const r = new Date(d);
+  if (unit === 'week')  { const dy = r.getDay(); r.setDate(r.getDate() + (dy === 0 ? -6 : 1 - dy)); }
+  else if (unit === 'month') { r.setDate(1); }
+  return r;
+}
+function nextUnit(d, unit) {
+  const r = new Date(d);
+  if      (unit === 'day')   r.setDate(r.getDate() + 1);
+  else if (unit === 'week')  r.setDate(r.getDate() + 7);
+  else                       r.setMonth(r.getMonth() + 1);
+  return r;
+}
+function labelForUnit(d, unit) {
+  if (unit === 'day')   return d.toLocaleDateString('de-DE', {day:'2-digit',month:'2-digit'});
+  if (unit === 'week')  return 'KW' + getISOWeek(d);
+  if (unit === 'month') return d.toLocaleDateString('de-DE', {month:'short',year:'2-digit'});
+}
+function getISOWeek(d) {
+  const jan4 = new Date(d.getFullYear(), 0, 4);
+  const doy  = Math.round((d - new Date(d.getFullYear(),0,1)) / 86400000) + 1;
+  return Math.ceil((doy + ((jan4.getDay() || 7) - 1)) / 7);
+}
+
+// ─── Backend / Persistence ────────────────────────────────────────────────────
+
+let serverAvailable = true;
+
+function setSyncStatus(state, msg) {
+  const dot = document.getElementById('sync-dot');
+  const txt = document.getElementById('sync-msg');
+  dot.className = state;
+  txt.textContent = msg;
+}
+
+async function loadDBFromBackend() {
+  try {
+    setSyncStatus('busy', 'Verbinde mit Server …');
+    const res = await fetch('/api/data');
+    if (!res.ok) throw new Error('Server response not ok');
+    const data = await res.json();
+    serverAvailable = true;
+    document.getElementById('setup-banner').style.display = 'none';
+    return Object.keys(data).length === 0 ? null : data;
+  } catch (err) {
+    console.warn('Server nicht erreichbar, nutze localStorage:', err);
+    serverAvailable = false;
+    document.getElementById('setup-banner').style.display = 'flex';
+    try { return JSON.parse(localStorage.getItem('gantt_db')) || null; } catch { return null; }
+  }
+}
+
+function saveDB(db) {
+  dbState = db;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    if (serverAvailable) {
+      setSyncStatus('busy', 'Speichert …');
+      try {
+        const res = await fetch('/api/data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(db)
+        });
+        if (!res.ok) throw new Error('Save failed');
+        setSyncStatus('ok', 'Gespeichert (' + new Date().toLocaleTimeString('de-DE') + ')');
+        localStorage.setItem('gantt_db', JSON.stringify(db)); // Backup
+      } catch (err) {
+        setSyncStatus('error', 'Fehler beim Speichern: ' + err.message);
+        console.error(err);
+        serverAvailable = false;
+        document.getElementById('setup-banner').style.display = 'flex';
+        localStorage.setItem('gantt_db', JSON.stringify(db));
+      }
+    } else {
+      localStorage.setItem('gantt_db', JSON.stringify(db));
+      setSyncStatus('local', 'Lokal gespeichert (Server offline)');
+    }
+  }, 600);
+}
+
+function loadDB() { return dbState; }
+
+async function reloadFromDB() {
+  setSyncStatus('busy', 'Lädt …');
+  const data = await loadDBFromBackend();
+  if (data && data.projects && data.projects.length) {
+    dbState = data;
+    loadCurrentProject(data);
+    setSyncStatus('ok', 'Aktualisiert (' + new Date().toLocaleTimeString('de-DE') + ')');
+  } else {
+    setSyncStatus('ok', 'Keine neuen Daten');
+  }
+}
+
+// ─── Default DB ───────────────────────────────────────────────────────────────
+
+function createDefaultDB() {
+  const id    = 'p' + Date.now();
+  return {
+    currentId: id,
+    projects: [{
+      id,
+      name: 'Projektplan',
+      settings: { title: 'Projektplan', unit: 'week', axisStart: '', axisEnd: '', defaultColor: '#2980b9', fontSize: 12, rowHeight: 32, labelWidth: 180 },
+      groups: [
+        { id: 'g1', label: 'Phase 1', color: '#1a5c3a' },
+        { id: 'g2', label: 'Phase 2', color: '#e67e22' },
+      ],
+      tasks: [
+        { id: 1, label: 'Planungsphase', segments: [{start: '2026-05-01', end: '2026-05-15', milestone: false}], groupId: null, color: '' },
+        { id: 2, label: 'Konzept',       segments: [{start: '2026-05-16', end: '2026-06-05', milestone: false}], groupId: 'g1', color: '' },
+        { id: 3, label: 'Entwurf',       segments: [{start: '2026-06-06', end: '2026-06-20', milestone: false}], groupId: 'g1', color: '' },
+        { id: 4, label: 'Genehmigung',   segments: [{start: '2026-06-21', end: '2026-06-21', milestone: true }], groupId: null, color: '#c0392b' },
+        { id: 5, label: 'Umsetzung',     segments: [{start: '2026-07-01', end: '2026-08-15', milestone: false}], groupId: 'g2', color: '' },
+        { id: 6, label: 'Abschluss',     segments: [{start: '2026-08-16', end: '2026-08-31', milestone: false}], groupId: 'g2', color: '' },
+      ],
+      nextId: 10
+    }]
+  };
+}
+
+// ─── Project bar toggle ───────────────────────────────────────────────────────
+
+function toggleProjectBar() {
+  const bar  = document.getElementById('project-bar');
+  const icon = document.getElementById('bar-toggle-icon');
+  const collapsed = bar.classList.toggle('collapsed');
+  icon.textContent = collapsed ? '▾' : '▴';
+  localStorage.setItem('gantt_bar_collapsed', collapsed ? '1' : '0');
+}
+
+function restoreBarState() {
+  if (localStorage.getItem('gantt_bar_collapsed') === '1') {
+    document.getElementById('project-bar').classList.add('collapsed');
+    document.getElementById('bar-toggle-icon').textContent = '▾';
+  }
+}
+
+// ─── Settings capture / apply ─────────────────────────────────────────────────
+
+function captureSettings() {
+  return {
+    title:        document.getElementById('chart-title').value,
+    unit:         document.getElementById('time-unit').value,
+    axisStart:    document.getElementById('axis-start').value,
+    axisEnd:      document.getElementById('axis-end').value,
+    defaultColor: document.getElementById('default-color').value,
+    fontSize:     +document.getElementById('font-size').value,
+    rowHeight:    +document.getElementById('row-height').value,
+    labelWidth:   +document.getElementById('label-width').value,
+  };
+}
+function applySettings(s) {
+  document.getElementById('chart-title').value    = s.title        ?? 'Projektplan';
+  document.getElementById('time-unit').value      = s.unit         || 'week';
+  document.getElementById('axis-start').value     = s.axisStart    || '';
+  document.getElementById('axis-end').value       = s.axisEnd      || '';
+  document.getElementById('default-color').value  = s.defaultColor || '#2980b9';
+  document.getElementById('font-size').value      = s.fontSize     || 12;
+  document.getElementById('row-height').value     = s.rowHeight    || 32;
+  document.getElementById('label-width').value    = s.labelWidth   || 180;
+}
+
+function saveCurrentProject() {
+  const db = loadDB();
+  if (!db) return;
+  const proj = getCurrentProject(db);
+  if (!proj) return;
+  proj.settings = captureSettings();
+  proj.groups   = JSON.parse(JSON.stringify(groups));
+  proj.tasks    = JSON.parse(JSON.stringify(tasks));
+  proj.nextId   = nextId;
+  saveDB(db);
+}
+
+function getCurrentProject(db) {
+  return db.projects.find(p => p.id === db.currentId) || db.projects[0];
+}
+
+function loadCurrentProject(db) {
+  const proj = getCurrentProject(db);
+  if (!proj) return;
+  groups = JSON.parse(JSON.stringify(proj.groups || []));
+  let loadedTasks = JSON.parse(JSON.stringify(proj.tasks  || []));
+  tasks = loadedTasks.map(t => {
+    if (!t.segments) {
+      t.segments = [{ start: t.start || '', end: t.end || '', milestone: t.milestone || false }];
+      delete t.start; delete t.end; delete t.milestone;
+    }
+    return t;
+  });
+  nextId = proj.nextId || 10;
+  applySettings(proj.settings || {});
+  renderProjectBar(db);
+  renderTable();
+  render();
+}
+
+function renderProjectBar(db) {
+  const sel       = document.getElementById('project-select');
+  const nameInput = document.getElementById('project-name');
+  const current   = getCurrentProject(db);
+  sel.innerHTML   = '';
+  (db.projects || []).forEach(p => {
+    const opt       = document.createElement('option');
+    opt.value       = p.id;
+    opt.textContent = p.name;
+    if (p.id === db.currentId) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  if (current) nameInput.value = current.name;
+}
+
+// ─── Project Management ───────────────────────────────────────────────────────
+
+function switchProject(id) {
+  saveCurrentProject();
+  const db = loadDB();
+  db.currentId = id;
+  saveDB(db);
+  loadCurrentProject(db);
+}
+
+function newProject() {
+  saveCurrentProject();
+  const db    = loadDB();
+  const id    = 'p' + Date.now();
+  const today = fmtDate(new Date());
+  db.projects.push({
+    id,
+    name: 'Neues Projekt',
+    settings: { title: 'Neues Projekt', unit: 'week', axisStart: '', axisEnd: '', defaultColor: '#2980b9', fontSize: 12, rowHeight: 32, labelWidth: 180 },
+    groups:   [],
+    tasks:    [{ id: 1, label: 'Neue Aufgabe', segments: [{start: today, end: fmtDate(addDays(new Date(), 7)), milestone: false}], groupId: null, color: '' }],
+    nextId:   10
+  });
+  db.currentId = id;
+  saveDB(db);
+  loadCurrentProject(db);
+}
+
+function deleteCurrentProject() {
+  const db = loadDB();
+  if (db.projects.length <= 1) { alert('Mindestens ein Projekt muss vorhanden sein.'); return; }
+  if (!confirm('Projekt „' + (getCurrentProject(db)?.name || '') + '" wirklich löschen?')) return;
+  db.projects  = db.projects.filter(p => p.id !== db.currentId);
+  db.currentId = db.projects[0].id;
+  saveDB(db);
+  loadCurrentProject(db);
+}
+
+function renameCurrentProject(name) {
+  const db   = loadDB();
+  const proj = getCurrentProject(db);
+  if (!proj) return;
+  proj.name = name;
+  saveDB(db);
+  const sel = document.getElementById('project-select');
+  const opt = sel.querySelector(`option[value="${proj.id}"]`);
+  if (opt) opt.textContent = name;
+}
+
+// ─── Table Rendering ──────────────────────────────────────────────────────────
+
+function renderTable() {
+  const tbody = document.getElementById('task-body');
+  tbody.innerHTML = '';
+
+  const secTr = document.createElement('tr');
+  secTr.className = 'section-header-row';
+  secTr.innerHTML = `<td colspan="7">Ohne Gruppe &nbsp;—&nbsp; Aufgaben hierher ziehen zum Entgruppen</td>`;
+  addDropTarget(secTr, null);
+  tbody.appendChild(secTr);
+
+  tasks.filter(t => !t.groupId).forEach(t => tbody.appendChild(makeTaskRow(t, false)));
+
+  groups.forEach(g => {
+    const gTasks = tasks.filter(t => t.groupId === g.id);
+    const minD = minTaskDate(gTasks);
+    const maxD = maxTaskDate(gTasks);
+    const dateHint = (minD && maxD) ? `${shortDate(minD)} – ${shortDate(maxD)}` : 'leer';
+
+    const tr = document.createElement('tr');
+    tr.className = 'group-header-row';
+    tr.dataset.groupId = g.id;
+    tr.innerHTML = `
+      <td><span class="drag-handle" style="color:#7a9ab0">⠿</span></td>
+      <td>
+        <input type="text" value="${escXML(g.label)}"
+          style="width:130px;font-weight:700"
+          oninput="updateGroupLabel('${g.id}', this.value)">
+      </td>
+      <td colspan="2" style="color:#7a9ab0;font-size:11px">${escXML(dateHint)}</td>
+      <td><input type="color" value="${g.color}" oninput="updateGroupColor('${g.id}', this.value)" title="Gruppenfarbe"></td>
+      <td></td>
+      <td><button class="btn-icon" onclick="removeGroup('${g.id}')" title="Gruppe löschen">✕</button></td>
+    `;
+    addDropTarget(tr, g.id);
+    tbody.appendChild(tr);
+
+    gTasks.forEach(t => tbody.appendChild(makeTaskRow(t, true)));
+  });
+}
+
+function makeTaskRow(t, indent) {
+  const tr = document.createElement('tr');
+  tr.className = 'task-row';
+  tr.dataset.taskId = t.id;
+  tr.draggable = true;
+
+  const defColor    = document.getElementById('default-color').value;
+
+  let segHtml = t.segments.map((s, i) => `
+    <div class="segment-row">
+      <input type="date" value="${s.start}" style="width:115px" oninput="updateSegment(${t.id}, ${i}, 'start', this.value)">
+      <input type="date" value="${s.end}" style="width:115px" ${s.milestone?'disabled':''} title="${s.milestone?'Bei Meilenstein identisch mit Start':''}" oninput="updateSegment(${t.id}, ${i}, 'end', this.value)">
+      <label style="display:flex;align-items:center;margin:0;gap:2px"><input type="checkbox" ${s.milestone ? 'checked' : ''} onchange="updateSegment(${t.id}, ${i}, 'milestone', this.checked)" title="Meilenstein"><span style="font-size:10px;color:#888">M</span></label>
+      <button class="btn-icon" style="font-size:11px" onclick="removeSegment(${t.id}, ${i})" title="Löschen">✕</button>
+    </div>
+  `).join('');
+  segHtml += `<button class="btn-icon" style="font-size:11px;color:#2980b9" onclick="addSegment(${t.id})">+ Zeitraum</button>`;
+
+  tr.innerHTML = `
+    <td><span class="drag-handle">⠿</span></td>
+    <td class="${indent ? 'indent-cell' : ''}" style="vertical-align:top;padding-top:8px">
+      ${indent ? '<span class="indent-mark">└</span>' : ''}
+      <input type="text" value="${escXML(t.label)}" style="width:${indent?110:125}px"
+        oninput="updateTask(${t.id},'label',this.value)">
+    </td>
+    <td style="padding:6px 0">${segHtml}</td>
+    <td style="vertical-align:top;padding-top:8px"><input type="color" value="${t.color || defColor}" oninput="updateTask(${t.id},'color',this.value)"></td>
+    <td style="vertical-align:top;padding-top:8px"><button class="btn-icon" onclick="removeTask(${t.id})" title="Löschen">✕</button></td>
+  `;
+
+  tr.addEventListener('dragstart', e => {
+    dragTaskId = t.id;
+    tr.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', t.id); // Firefox Fix
+  });
+  tr.addEventListener('dragover', e => {
+    if (!dragTaskId || dragTaskId === t.id) return;
+    e.preventDefault();
+    clearDragStyles();
+    tr.classList.add('drag-over-task');
+  });
+  tr.addEventListener('dragleave', () => tr.classList.remove('drag-over-task'));
+  tr.addEventListener('drop', e => {
+    e.preventDefault();
+    dropOnTask(t.id);
+  });
+  tr.addEventListener('dragend', cleanupDrag);
+  return tr;
+}
+
+function addDropTarget(tr, groupId) {
+  tr.addEventListener('dragover', e => {
+    if (!dragTaskId) return;
+    e.preventDefault();
+    clearDragStyles();
+    tr.classList.add('drag-over-group');
+  });
+  tr.addEventListener('dragleave', () => tr.classList.remove('drag-over-group'));
+  tr.addEventListener('drop', e => {
+    e.preventDefault();
+    dropOnGroup(groupId);
+  });
+}
+
+function clearDragStyles() {
+  document.querySelectorAll('.drag-over-group,.drag-over-task').forEach(el => {
+    el.classList.remove('drag-over-group', 'drag-over-task');
+  });
+}
+
+function cleanupDrag() {
+  dragTaskId = null;
+  clearDragStyles();
+  document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+}
+
+// ─── Drop Handlers ────────────────────────────────────────────────────────────
+
+function dropOnGroup(groupId) {
+  if (dragTaskId === null) return;
+  const taskId = dragTaskId;
+  cleanupDrag();
+  const task = tasks.find(t => t.id === taskId);
+  if (!task) return;
+  task.groupId = groupId;
+  tasks = tasks.filter(t => t.id !== taskId);
+  if (groupId === null) {
+    let lastIdx = -1;
+    tasks.forEach((t, i) => { if (!t.groupId) lastIdx = i; });
+    tasks.splice(lastIdx + 1, 0, task);
+  } else {
+    let lastIdx = -1;
+    tasks.forEach((t, i) => { if (t.groupId === groupId) lastIdx = i; });
+    if (lastIdx === -1) tasks.push(task); else tasks.splice(lastIdx + 1, 0, task);
+  }
+  renderTable(); render();
+}
+
+function dropOnTask(targetId) {
+  if (dragTaskId === null) return;
+  if (dragTaskId === targetId) { cleanupDrag(); return; }
+  const taskId = dragTaskId;
+  cleanupDrag();
+  const task   = tasks.find(t => t.id === taskId);
+  const target = tasks.find(t => t.id === targetId);
+  if (!task || !target) return;
+  task.groupId = target.groupId;
+  tasks = tasks.filter(t => t.id !== taskId);
+  const idx = tasks.findIndex(t => t.id === targetId);
+  tasks.splice(idx + 1, 0, task);
+  renderTable(); render();
+}
+
+// ─── CRUD ─────────────────────────────────────────────────────────────────────
+
+function updateTask(id, field, value) {
+  const t = tasks.find(t => t.id === id);
+  if (!t) return;
+  t[field] = value;
+  render();
+}
+function updateSegment(taskId, segIdx, field, value) {
+  const t = tasks.find(t => t.id === taskId);
+  if (!t) return;
+  const s = t.segments[segIdx];
+  s[field] = value;
+  if (field === 'milestone') {
+    if (value) s.end = s.start;
+    renderTable();
+  }
+  if (field === 'start') {
+    if (s.milestone) {
+      s.end = s.start;
+    } else if (s.end && s.start > s.end) {
+      s.end = s.start;
+      renderTable();
+    }
+  }
+  render();
+}
+function addSegment(taskId) {
+  const t = tasks.find(t => t.id === taskId);
+  if (!t) return;
+  const last = t.segments[t.segments.length - 1];
+  t.segments.push({ start: last?.start || '', end: last?.end || '', milestone: false });
+  renderTable(); render();
+}
+function removeSegment(taskId, segIdx) {
+  const t = tasks.find(t => t.id === taskId);
+  if (!t || t.segments.length <= 1) return; 
+  t.segments.splice(segIdx, 1);
+  renderTable(); render();
+}
+
+function updateGroupLabel(id, value) {
+  const g = groups.find(g => g.id === id);
+  if (g) { g.label = value; render(); }
+}
+function updateGroupColor(id, value) {
+  const g = groups.find(g => g.id === id);
+  if (g) { g.color = value; render(); }
+}
+
+function addTask() {
+  const today = fmtDate(new Date());
+  tasks.push({ id: nextId++, label: 'Neue Aufgabe', segments: [{start: today, end: fmtDate(addDays(new Date(), 7)), milestone: false}], groupId: null, color: '' });
+  renderTable(); render();
+}
+function addGroup() {
+  groups.push({ id: 'g' + nextId++, label: 'Neue Gruppe', color: '#2980b9' });
+  renderTable(); render();
+}
+function removeTask(id) {
+  tasks = tasks.filter(t => t.id !== id);
+  renderTable(); render();
+}
+function removeGroup(id) {
+  tasks.forEach(t => { if (t.groupId === id) t.groupId = null; });
+  groups = groups.filter(g => g.id !== id);
+  renderTable(); render();
+}
+
+// ─── CSV Import ───────────────────────────────────────────────────────────────
+
+function importCSV() { document.getElementById('csv-input').click(); }
+
+function handleCSV(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const lines = ev.target.result.split(/\r?\n/).filter(l => l.trim());
+    if (!lines.length) return;
+    const sep     = lines[0].includes(';') ? ';' : ',';
+    const headers = lines[0].split(sep).map(h => h.trim().toLowerCase());
+    const col     = k => headers.indexOf(k);
+    const groupMap = {};
+    const importedMap = {};
+    for (let i = 1; i < lines.length; i++) {
+      const cells = lines[i].split(sep);
+      const get   = k => (col(k) >= 0 ? cells[col(k)]?.trim() : '') || '';
+      const label = get('bezeichnung') || get('label') || get('name') || get('aufgabe') || cells[0]?.trim();
+      const start = get('start') || get('von') || get('beginn') || cells[1]?.trim();
+      const end   = get('end')   || get('ende') || get('bis')   || cells[2]?.trim();
+      if (!label || !start || !end) continue;
+      const groupName = get('gruppe') || get('group') || '';
+      let groupId = null;
+      if (groupName) {
+        if (!groupMap[groupName]) {
+          const gid = 'g' + nextId++;
+          groups.push({ id: gid, label: groupName, color: '#2980b9' });
+          groupMap[groupName] = gid;
+        }
+        groupId = groupMap[groupName];
+      }
+      const isMilestone = ['1','true','ja','yes','x'].includes((get('meilenstein') || get('milestone')).toLowerCase());
+      const startNorm   = normalizeDate(start);
+      
+      const key = label + '|' + (groupId || '');
+      if (!importedMap[key]) {
+        importedMap[key] = {
+          id: nextId++, label,
+          groupId, color: get('farbe') || get('color') || '',
+          segments: []
+        };
+      }
+      importedMap[key].segments.push({
+        start: startNorm,
+        end:   isMilestone ? startNorm : normalizeDate(end),
+        milestone: isMilestone,
+      });
+    }
+    const imported = Object.values(importedMap);
+    if (imported.length) { tasks = [...tasks, ...imported]; renderTable(); render(); }
+    e.target.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function normalizeDate(s) {
+  if (!s) return '';
+  const m = s.match(/^(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})$/);
+  if (m) { const y = m[3].length === 2 ? '20'+m[3] : m[3]; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; }
+  return s;
+}
+
+// ─── SVG Rendering ────────────────────────────────────────────────────────────
+
+function render() {
+  document.getElementById('svg-container').innerHTML = buildSVG();
+  saveCurrentProject();
+}
+
+function buildSVG() {
+  const title     = document.getElementById('chart-title').value;
+  const unit      = document.getElementById('time-unit').value;
+  const defColor  = document.getElementById('default-color').value;
+  const fontSize  = +document.getElementById('font-size').value || 12;
+  const rowHeight = +document.getElementById('row-height').value || 32;
+  const labelW    = +document.getElementById('label-width').value || 180;
+
+  const svgRows = [];
+  tasks.filter(t => !t.groupId).forEach(t => svgRows.push({ type: 'task', task: t, indent: false }));
+  groups.forEach(g => {
+    const gTasks = tasks.filter(t => t.groupId === g.id);
+    svgRows.push({ type: 'group', group: g, gTasks });
+    gTasks.forEach(t => svgRows.push({ type: 'task', task: t, indent: true }));
+  });
+
+  if (!svgRows.length) return emptyMsg('Keine Aufgaben vorhanden.');
+
+  // Filtere ungültige oder zeitlich unplausible Daten heraus (z. B. während des Tippens)
+  const allDates = tasks
+    .flatMap(t => t.segments)
+    .filter(s => s.start && s.end)
+    .flatMap(s => [parseDate(s.start), parseDate(s.end)])
+    .filter(isValidRenderDate);
+
+  if (!allDates.length) return emptyMsg('Bitte gültige Datumsangaben ergänzen (Jahr zwischen 1000 und 3000).');
+
+  // Manuelle Werte validieren
+  let manualStart = parseDate(document.getElementById('axis-start').value);
+  let axisStart = isValidRenderDate(manualStart)
+    ? manualStart
+    : new Date(Math.min(...allDates));
+
+  let manualEnd = parseDate(document.getElementById('axis-end').value);
+  let axisEnd = isValidRenderDate(manualEnd)
+    ? manualEnd
+    : new Date(Math.max(...allDates));
+
+  // Falls die berechneten Daten ungültig sind, abbrechen
+  if (!isValidRenderDate(axisStart) || !isValidRenderDate(axisEnd)) {
+    return emptyMsg('Ungültiger Datumsbereich.');
+  }
+
+  axisStart = startOf(axisStart, unit);
+  axisEnd   = nextUnit(startOf(axisEnd, unit), unit);
+
+  // Sicherheitsgrenze für Ticks
+  const ticks = [];
+  let cur = new Date(axisStart);
+  const maxTicks = 1000;
+  while (cur < axisEnd) {
+    ticks.push(new Date(cur));
+    cur = nextUnit(cur, unit);
+    if (ticks.length > maxTicks) {
+      return emptyMsg('Datumsbereich zu groß (max. 1000 Zeiteinheiten erlaubt). Bitte Start- und Enddatum korrigieren.');
+    }
+  }
+  if (!ticks.length) return emptyMsg('Ungültiger Datumsbereich.');
+
+  const totalMs  = axisEnd - axisStart;
+  const tickW    = Math.max(70, 80);
+  const chartW   = Math.max(ticks.length * tickW, 400);
+  const titleH   = title ? 34 : 0;
+  const headerH  = 48;
+  const bodyTop  = titleH + headerH;
+  const svgW     = labelW + chartW;
+  const totalH   = bodyTop + svgRows.length * rowHeight + 8;
+
+  function xOf(s) {
+    const d = parseDate(s);
+    if (!isValidRenderDate(d)) return labelW;
+    return labelW + Math.max(0, Math.min(chartW, ((d - axisStart) / totalMs) * chartW));
+  }
+
+  const L = [];
+  L.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${totalH}" font-family="'Segoe UI',Arial,sans-serif" font-size="${fontSize}">`);
+  L.push(`<defs>
+    <filter id="sh"><feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-opacity="0.15"/></filter>
+    <clipPath id="lclip"><rect x="0" y="0" width="${labelW-4}" height="10000"/></clipPath>
+  </defs>`);
+  L.push(`<rect width="${svgW}" height="${totalH}" fill="#fff"/>`);
+
+  if (title) {
+    L.push(`<text x="${svgW/2}" y="24" text-anchor="middle" font-size="${fontSize+6}" font-weight="600" fill="#1a3a5c">${escXML(title)}</text>`);
+  }
+
+  L.push(`<rect x="0" y="${titleH}" width="${svgW}" height="${headerH}" fill="#1a3a5c"/>`);
+  L.push(`<rect x="0" y="${titleH+30}" width="${svgW}" height="18" fill="#223f60"/>`);
+  L.push(`<text x="${labelW/2}" y="${titleH+20}" text-anchor="middle" fill="#fff" font-weight="600" font-size="${fontSize+1}">Vorgang</text>`);
+
+  const tickPx = chartW / ticks.length;
+  ticks.forEach((tick, i) => {
+    const tx = labelW + i * tickPx + tickPx / 2;
+    L.push(`<text x="${tx}" y="${titleH+20}" text-anchor="middle" fill="#c8d8e8" font-size="${fontSize-1}">${escXML(labelForUnit(tick,unit))}</text>`);
+    if (unit === 'week') {
+      L.push(`<text x="${tx}" y="${titleH+43}" text-anchor="middle" fill="#90aabf" font-size="${fontSize-2}">${tick.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'})}</text>`);
+    } else if (unit === 'month') {
+      L.push(`<text x="${tx}" y="${titleH+43}" text-anchor="middle" fill="#90aabf" font-size="${fontSize-2}">${tick.getFullYear()}</text>`);
+    }
+  });
+
+  svgRows.forEach((row, i) => {
+    const ry  = bodyTop + i * rowHeight;
+    const bg  = row.type === 'group' ? '#e4eef7' : (i % 2 === 0 ? '#f7f9fb' : '#fff');
+    L.push(`<rect x="0" y="${ry}" width="${svgW}" height="${rowHeight}" fill="${bg}"/>`);
+  });
+
+  ticks.forEach((_, i) => {
+    const tx = labelW + i * tickPx;
+    L.push(`<line x1="${tx}" y1="${bodyTop}" x2="${tx}" y2="${totalH}" stroke="#e0e4ea" stroke-width="0.7"/>`);
+  });
+  L.push(`<line x1="${labelW+chartW}" y1="${bodyTop}" x2="${labelW+chartW}" y2="${totalH}" stroke="#e0e4ea" stroke-width="0.7"/>`);
+
+  svgRows.forEach((_, i) => {
+    L.push(`<line x1="0" y1="${bodyTop+(i+1)*rowHeight}" x2="${svgW}" y2="${bodyTop+(i+1)*rowHeight}" stroke="#e8e8e8" stroke-width="0.5"/>`);
+  });
+
+  const today = new Date();
+  if (today >= axisStart && today <= axisEnd) {
+    const tx = xOf(fmtDate(today));
+    L.push(`<line x1="${tx}" y1="${bodyTop}" x2="${tx}" y2="${totalH-4}" stroke="#e74c3c" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>`);
+    L.push(`<text x="${tx+3}" y="${bodyTop+11}" fill="#e74c3c" font-size="${fontSize-2}">Heute</text>`);
+  }
+
+  const barM = 5;
+  svgRows.forEach((row, i) => {
+    const ry = bodyTop + i * rowHeight;
+    const cy = ry + rowHeight / 2;
+
+    if (row.type === 'group') {
+      const g     = row.group;
+      L.push(`<text x="${labelW-8}" y="${cy+fontSize*0.35}" text-anchor="end" clip-path="url(#lclip)" fill="#1a3a5c" font-weight="700" font-size="${fontSize+1}">${escXML(g.label)}</text>`);
+      const gSegs = row.gTasks.flatMap(t => t.segments).filter(s => s.start && s.end);
+      if (gSegs.length) {
+        const gMin = gSegs.reduce((m,s) => s.start && (!m || s.start < m) ? s.start : m, null);
+        const gMax = gSegs.reduce((m,s) => s.end   && (!m || s.end   > m) ? s.end   : m, null);
+        if (gMin && gMax) {
+          const x1 = xOf(gMin), x2 = xOf(gMax);
+          const bh = rowHeight - barM * 2, by = ry + barM;
+          L.push(`<rect x="${x1}" y="${by}" width="${Math.max(x2-x1,4)}" height="${bh}" rx="3" fill="${g.color}" opacity="0.18"/>`);
+          L.push(`<rect x="${x1}" y="${by}" width="${Math.max(x2-x1,4)}" height="${bh}" rx="3" fill="none" stroke="${g.color}" stroke-width="2" opacity="0.65"/>`);
+          L.push(`<text x="${x1}" y="${ry+rowHeight-2}" fill="${g.color}" font-size="${fontSize-2}" opacity="0.8">${shortDate(gMin)}</text>`);
+          if (x2 - x1 > 50) {
+            L.push(`<text x="${x2+3}" y="${ry+rowHeight-2}" fill="${g.color}" font-size="${fontSize-2}" opacity="0.8">${shortDate(gMax)}</text>`);
+          }
+        }
+      } else {
+        L.push(`<text x="${labelW+8}" y="${cy+fontSize*0.35}" fill="#bbb" font-size="${fontSize-1}" font-style="italic">leer</text>`);
+      }
+    } else {
+      const t = row.task;
+      L.push(`<text x="${labelW-8}" y="${cy+fontSize*0.35}" text-anchor="end" clip-path="url(#lclip)" fill="#333" font-size="${fontSize}">${escXML(t.label)}</text>`);
+      
+      const validSegs = t.segments.filter(s => s.start && s.end);
+      validSegs.forEach((s) => {
+        if (s.milestone) {
+          const sz = rowHeight * 0.35;
+          const mx = xOf(s.start);
+          L.push(`<polygon points="${mx},${cy-sz} ${mx+sz},${cy} ${mx},${cy+sz} ${mx-sz},${cy}" fill="${t.color||'#c0392b'}" filter="url(#sh)"/>`);
+        } else {
+          const shrink = row.indent ? 2 : 0;
+          const x1 = xOf(s.start);
+          let   x2 = xOf(s.end);
+          if (x2 <= x1) x2 = x1 + 4;
+          const bh = rowHeight - barM*2 - shrink*2;
+          const by = ry + barM + shrink;
+          const fill = t.color || defColor;
+          L.push(`<rect x="${x1}" y="${by}" width="${x2-x1}" height="${bh}" rx="3" fill="${fill}" filter="url(#sh)" opacity="0.92"/>`);
+          if (x2 - x1 > 30 && validSegs.length === 1) {
+            L.push(`<text x="${x1+4}" y="${by+bh/2+fontSize*0.35}" fill="#fff" font-size="${fontSize-1}">${escXML(t.label)}</text>`);
+          }
+        }
+      });
+    }
+  });
+
+  L.push(`<line x1="${labelW}" y1="${titleH}" x2="${labelW}" y2="${totalH}" stroke="#c0c8d4" stroke-width="1"/>`);
+  L.push(`<rect x="0" y="0" width="${svgW}" height="${totalH}" fill="none" stroke="#c0c8d4" stroke-width="1"/>`);
+  L.push('</svg>');
+  return L.join('\n');
+}
+
+function emptyMsg(msg) {
+  return `<svg width="400" height="60" xmlns="http://www.w3.org/2000/svg"><text x="20" y="35" font-size="14" fill="#888">${escXML(msg)}</text></svg>`;
+}
+
+// ─── Export ───────────────────────────────────────────────────────────────────
+
+function exportSVG() {
+  download(new Blob([buildSVG()], {type:'image/svg+xml'}), 'gantt.svg');
+}
+function exportPNG() {
+  const svgStr = buildSVG();
+  const svgEl  = new DOMParser().parseFromString(svgStr, 'image/svg+xml').documentElement;
+  const w = +svgEl.getAttribute('width'), h = +svgEl.getAttribute('height');
+  const scale = 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = w*scale; canvas.height = h*scale;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(scale, scale);
+  const img = new Image();
+  const url = URL.createObjectURL(new Blob([svgStr], {type:'image/svg+xml'}));
+  img.onload = () => {
+    ctx.drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(url);
+    canvas.toBlob(blob => download(blob, 'gantt.png'), 'image/png');
+  };
+  img.src = url;
+}
+function download(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
+// ─── Resizer ──────────────────────────────────────────────────────────────────
+
+function initResizer() {
+  const resizer = document.getElementById('layout-resizer');
+  const leftPanel = document.getElementById('left-panel');
+  let isResizing = false;
+
+  resizer.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    resizer.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    let newWidth = e.clientX - 16 - 8; // 16px padding, 8px half resizer
+    if (newWidth < 300) newWidth = 300;
+    if (newWidth > window.innerWidth - 300) newWidth = window.innerWidth - 300;
+    leftPanel.style.width = newWidth + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      resizer.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+
+async function initApp() {
+  restoreBarState();
+
+  let data = await loadDBFromBackend();
+  if (!data || !data.projects || !data.projects.length) {
+    data = createDefaultDB();
+  }
+  dbState = data;
+  saveDB(data);
+  loadCurrentProject(data);
+
+  if (serverAvailable) {
+    setSyncStatus('ok', 'Verbunden');
+    document.getElementById('reload-btn').style.display = '';
+  } else {
+    setSyncStatus('local', 'Lokal gespeichert (Server offline)');
+  }
+  
+  initResizer();
+}
+
+initApp();
+</script>
+</body>
+</html>
