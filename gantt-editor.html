@@ -121,10 +121,26 @@
   .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
 
   .preview-panel { flex-grow: 1; flex-basis: 0; min-width: 0; background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.12); padding: 16px; display: flex; flex-direction: column; gap: 12px; align-self: stretch; }
-  #svg-container { overflow: auto; border: 1px solid #e0e0e0; border-radius: 6px; background: #fafafa; flex: 1; }
+  #svg-container { overflow: auto; border: 1px solid #e0e0e0; border-radius: 6px; background: #fafafa; flex: 1; position: relative; }
   #svg-container svg { display: block; }
+
+  .label-resizer {
+    position: absolute; top: 0; width: 7px; cursor: col-resize; z-index: 10;
+    background: transparent; transition: background .15s;
+  }
+  .label-resizer:hover, .label-resizer.active { background: rgba(41,128,185,.35); }
+  .label-resizer::after {
+    content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 3px; height: 28px; background: #b0c8dc; border-radius: 2px; transition: background .15s;
+  }
+  .label-resizer:hover::after, .label-resizer.active::after { background: #2980b9; }
   
-  .segment-row { display:flex; gap:4px; align-items:center; margin-bottom:4px; }
+  .segment-row { display:flex; gap:4px; align-items:center; margin-bottom:4px; flex-wrap:wrap; }
+  .segment-row .seg-name { width:90px; font-size:11px; }
+  .seg-toggle { background:none; border:none; cursor:pointer; font-size:11px; color:#2980b9; padding:1px 4px; border-radius:3px; }
+  .seg-toggle:hover { background:#e8f0f8; }
+  .seg-collapsed .segment-row:not(:first-child) { display:none; }
+  .seg-collapsed .seg-add-btn { display:none; }
   @media (max-width: 900px) { 
     .layout { flex-direction: column; } 
     .panel { width: 100% !important; }
@@ -182,7 +198,8 @@
         <div><label>Balkenfarbe (Standard)</label><input type="color" id="default-color" value="#2980b9" oninput="render()" style="width:100%;height:32px"></div>
         <div><label>Schriftgröße</label><input type="number" id="font-size" value="12" min="8" max="20" oninput="render()"></div>
         <div><label>Zeilenhöhe px</label><input type="number" id="row-height" value="32" min="20" max="60" oninput="render()"></div>
-        <div><label>Labelbreite px</label><input type="number" id="label-width" value="180" min="80" max="400" oninput="render()"></div>
+        <div><label>Labelbreite px</label><input type="number" id="label-width" value="180" min="80" max="800" oninput="render()"></div>
+        <div><label style="display:flex;align-items:center;gap:6px;margin-top:6px"><input type="checkbox" id="show-today" checked onchange="render()"> Heute-Linie anzeigen</label></div>
       </div>
     </div>
 
@@ -195,7 +212,7 @@
             <tr>
               <th style="width:20px"></th>
               <th>Bezeichnung</th>
-              <th>Zeiträume (Start &ndash; Ende)</th>
+              <th>Zeiträume (Name / Start &ndash; Ende)</th>
               <th style="width:36px">Farbe</th>
               <th style="width:22px"></th>
             </tr>
@@ -239,9 +256,11 @@
 let groups = [];
 let tasks  = [];
 let nextId = 10;
-let dragTaskId = null;
-let dbState    = null;
-let saveTimer  = null;
+let dragTaskId    = null;
+let dbState       = null;
+let saveTimer     = null;
+let lastEditedId  = null;
+let collapsedSegs = new Set();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -414,6 +433,7 @@ function captureSettings() {
     fontSize:     +document.getElementById('font-size').value,
     rowHeight:    +document.getElementById('row-height').value,
     labelWidth:   +document.getElementById('label-width').value,
+    showToday:    document.getElementById('show-today').checked,
   };
 }
 function applySettings(s) {
@@ -425,6 +445,7 @@ function applySettings(s) {
   document.getElementById('font-size').value      = s.fontSize     || 12;
   document.getElementById('row-height').value     = s.rowHeight    || 32;
   document.getElementById('label-width').value    = s.labelWidth   || 180;
+  document.getElementById('show-today').checked   = s.showToday    ?? true;
 }
 
 function saveCurrentProject() {
@@ -576,15 +597,24 @@ function makeTaskRow(t, indent) {
 
   const defColor    = document.getElementById('default-color').value;
 
-  let segHtml = t.segments.map((s, i) => `
+  const isCollapsed = collapsedSegs.has(t.id);
+  const multiSeg = t.segments.length > 1;
+  let segHtml = '';
+  if (multiSeg) {
+    segHtml += `<button class="seg-toggle" onclick="toggleSegCollapse(${t.id})" title="${isCollapsed ? 'Zeiträume aufklappen' : 'Zeiträume einklappen'}">${isCollapsed ? '▸' : '▾'} ${t.segments.length} Zeiträume</button>`;
+  }
+  segHtml += `<div class="${isCollapsed && multiSeg ? 'seg-collapsed' : ''}">`;
+  segHtml += t.segments.map((s, i) => `
     <div class="segment-row">
+      <input type="text" class="seg-name" value="${escXML(s.name || '')}" placeholder="Name" oninput="updateSegment(${t.id}, ${i}, 'name', this.value)" title="Anzeigename im Diagramm (optional)">
       <input type="date" value="${s.start}" style="width:115px" oninput="updateSegment(${t.id}, ${i}, 'start', this.value)">
       <input type="date" value="${s.end}" style="width:115px" ${s.milestone?'disabled':''} title="${s.milestone?'Bei Meilenstein identisch mit Start':''}" oninput="updateSegment(${t.id}, ${i}, 'end', this.value)">
       <label style="display:flex;align-items:center;margin:0;gap:2px"><input type="checkbox" ${s.milestone ? 'checked' : ''} onchange="updateSegment(${t.id}, ${i}, 'milestone', this.checked)" title="Meilenstein"><span style="font-size:10px;color:#888">M</span></label>
       <button class="btn-icon" style="font-size:11px" onclick="removeSegment(${t.id}, ${i})" title="Löschen">✕</button>
     </div>
   `).join('');
-  segHtml += `<button class="btn-icon" style="font-size:11px;color:#2980b9" onclick="addSegment(${t.id})">+ Zeitraum</button>`;
+  segHtml += `<button class="btn-icon seg-add-btn" style="font-size:11px;color:#2980b9" onclick="addSegment(${t.id})">+ Zeitraum</button>`;
+  segHtml += `</div>`;
 
   tr.innerHTML = `
     <td><span class="drag-handle">⠿</span></td>
@@ -684,15 +714,23 @@ function dropOnTask(targetId) {
 
 // ─── CRUD ─────────────────────────────────────────────────────────────────────
 
+function toggleSegCollapse(taskId) {
+  if (collapsedSegs.has(taskId)) collapsedSegs.delete(taskId);
+  else collapsedSegs.add(taskId);
+  renderTable();
+}
+
 function updateTask(id, field, value) {
   const t = tasks.find(t => t.id === id);
   if (!t) return;
   t[field] = value;
+  lastEditedId = id;
   render();
 }
 function updateSegment(taskId, segIdx, field, value) {
   const t = tasks.find(t => t.id === taskId);
   if (!t) return;
+  lastEditedId = taskId;
   const s = t.segments[segIdx];
   s[field] = value;
   if (field === 'milestone') {
@@ -713,7 +751,7 @@ function addSegment(taskId) {
   const t = tasks.find(t => t.id === taskId);
   if (!t) return;
   const last = t.segments[t.segments.length - 1];
-  t.segments.push({ start: last?.start || '', end: last?.end || '', milestone: false });
+  t.segments.push({ start: last?.start || '', end: last?.end || '', milestone: false, name: '' });
   renderTable(); render();
 }
 function removeSegment(taskId, segIdx) {
@@ -734,7 +772,19 @@ function updateGroupColor(id, value) {
 
 function addTask() {
   const today = fmtDate(new Date());
-  tasks.push({ id: nextId++, label: 'Neue Aufgabe', segments: [{start: today, end: fmtDate(addDays(new Date(), 7)), milestone: false}], groupId: null, color: '' });
+  const newTask = { id: nextId++, label: 'Neue Aufgabe', segments: [{start: today, end: fmtDate(addDays(new Date(), 7)), milestone: false}], groupId: null, color: '' };
+  if (lastEditedId !== null) {
+    const idx = tasks.findIndex(t => t.id === lastEditedId);
+    if (idx >= 0) {
+      newTask.groupId = tasks[idx].groupId;
+      tasks.splice(idx + 1, 0, newTask);
+    } else {
+      tasks.push(newTask);
+    }
+  } else {
+    tasks.push(newTask);
+  }
+  lastEditedId = newTask.id;
   renderTable(); render();
 }
 function addGroup() {
@@ -818,8 +868,52 @@ function normalizeDate(s) {
 // ─── SVG Rendering ────────────────────────────────────────────────────────────
 
 function render() {
-  document.getElementById('svg-container').innerHTML = buildSVG();
+  const container = document.getElementById('svg-container');
+  container.innerHTML = buildSVG();
+  placeLabelResizer(container);
   saveCurrentProject();
+}
+
+function placeLabelResizer(container) {
+  const labelW = +document.getElementById('label-width').value || 180;
+  let handle = container.querySelector('.label-resizer');
+  if (!handle) {
+    handle = document.createElement('div');
+    handle.className = 'label-resizer';
+    container.appendChild(handle);
+  }
+  const svg = container.querySelector('svg');
+  const svgH = svg ? +svg.getAttribute('height') : 300;
+  handle.style.left = (labelW - 3) + 'px';
+  handle.style.height = svgH + 'px';
+
+  let startX = 0, startW = 0;
+  handle.onmousedown = (e) => {
+    e.preventDefault();
+    startX = e.clientX;
+    startW = labelW;
+    handle.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMove = (ev) => {
+      const dx = ev.clientX - startX;
+      const newW = Math.max(80, Math.round(startW + dx));
+      document.getElementById('label-width').value = newW;
+      container.innerHTML = buildSVG();
+      placeLabelResizer(container);
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      handle.classList.remove('active');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      saveCurrentProject();
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  };
 }
 
 function buildSVG() {
@@ -829,6 +923,7 @@ function buildSVG() {
   const fontSize  = +document.getElementById('font-size').value || 12;
   const rowHeight = +document.getElementById('row-height').value || 32;
   const labelW    = +document.getElementById('label-width').value || 180;
+  const showToday = document.getElementById('show-today').checked;
 
   const svgRows = [];
   tasks.filter(t => !t.groupId).forEach(t => svgRows.push({ type: 'task', task: t, indent: false }));
@@ -940,7 +1035,7 @@ function buildSVG() {
   });
 
   const today = new Date();
-  if (today >= axisStart && today <= axisEnd) {
+  if (showToday && today >= axisStart && today <= axisEnd) {
     const tx = xOf(fmtDate(today));
     L.push(`<line x1="${tx}" y1="${bodyTop}" x2="${tx}" y2="${totalH-4}" stroke="#e74c3c" stroke-width="1.5" stroke-dasharray="4,3" opacity="0.7"/>`);
     L.push(`<text x="${tx+3}" y="${bodyTop+11}" fill="#e74c3c" font-size="${fontSize-2}">Heute</text>`);
@@ -973,7 +1068,7 @@ function buildSVG() {
       }
     } else {
       const t = row.task;
-      L.push(`<text x="${labelW-8}" y="${cy+fontSize*0.35}" text-anchor="end" clip-path="url(#lclip)" fill="#333" font-size="${fontSize}">${escXML(t.label)}</text>`);
+      L.push(`<text x="${labelW-8}" y="${cy+fontSize*0.35}" text-anchor="end" clip-path="url(#lclip)" fill="#333" font-size="${fontSize}"><title>${escXML(t.label)}</title>${escXML(t.label)}</text>`);
       
       const validSegs = t.segments.filter(s => s.start && s.end);
       validSegs.forEach((s) => {
@@ -981,6 +1076,10 @@ function buildSVG() {
           const sz = rowHeight * 0.35;
           const mx = xOf(s.start);
           L.push(`<polygon points="${mx},${cy-sz} ${mx+sz},${cy} ${mx},${cy+sz} ${mx-sz},${cy}" fill="${t.color||'#c0392b'}" filter="url(#sh)"/>`);
+          const msLabel = s.name || (validSegs.length === 1 ? t.label : '');
+          if (msLabel) {
+            L.push(`<text x="${mx+sz+4}" y="${cy+fontSize*0.35}" fill="${t.color||'#c0392b'}" font-size="${fontSize-1}"><title>${escXML(msLabel)}</title>${escXML(msLabel)}</text>`);
+          }
         } else {
           const shrink = row.indent ? 2 : 0;
           const x1 = xOf(s.start);
@@ -990,8 +1089,12 @@ function buildSVG() {
           const by = ry + barM + shrink;
           const fill = t.color || defColor;
           L.push(`<rect x="${x1}" y="${by}" width="${x2-x1}" height="${bh}" rx="3" fill="${fill}" filter="url(#sh)" opacity="0.92"/>`);
-          if (x2 - x1 > 30 && validSegs.length === 1) {
-            L.push(`<text x="${x1+4}" y="${by+bh/2+fontSize*0.35}" fill="#fff" font-size="${fontSize-1}">${escXML(t.label)}</text>`);
+          const barLabel = s.name || (validSegs.length === 1 ? t.label : '');
+          if (x2 - x1 > 30 && barLabel) {
+            L.push(`<text x="${x1+4}" y="${by+bh/2+fontSize*0.35}" fill="#fff" font-size="${fontSize-1}"><title>${escXML(barLabel)}</title>${escXML(barLabel)}</text>`);
+          }
+          if (s.name && x2 - x1 <= 30) {
+            L.push(`<text x="${x1}" y="${by-2}" fill="${fill}" font-size="${fontSize-2}" opacity="0.85"><title>${escXML(s.name)}</title>${escXML(s.name)}</text>`);
           }
         }
       });
