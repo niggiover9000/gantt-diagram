@@ -1,0 +1,19 @@
+services:
+  gantt:
+    build: .
+    # Alternativ ein vorgebautes Image verwenden:
+    # image: gantt-editor:latest
+    container_name: gantt-editor
+    restart: unless-stopped
+    ports:
+      # Host-Port : Container-Port
+      - "8000:8000"
+    environment:
+      GANTT_DB: /data/gantt.db
+      GANTT_PORT: "8000"
+    volumes:
+      # Persistiert die SQLite-Datenbank über Container-Neustarts hinweg
+      - gantt-data:/data
+
+volumes:
+  gantt-data:

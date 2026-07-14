@@ -3,8 +3,8 @@ import sqlite3
 import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-DB_FILE = 'gantt.db'
-PORT = 8000
+DB_FILE = os.environ.get('GANTT_DB', 'gantt.db')
+PORT = int(os.environ.get('GANTT_PORT', '8000'))
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
