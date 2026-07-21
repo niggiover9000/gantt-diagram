@@ -11,8 +11,10 @@ services:
     environment:
       GANTT_DB: /data/gantt.db
       GANTT_PORT: "8000"
+      GANTT_ADMIN_USER: admin
+      GANTT_ADMIN_PASSWORD: "adminpassword"
+      GANTT_COOKIE_SECURE: "1"
     volumes:
-      # Persistiert die SQLite-Datenbank über Container-Neustarts hinweg
       - gantt-data:/data
 
 volumes:

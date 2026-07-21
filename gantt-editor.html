@@ -160,6 +160,12 @@
   <button class="bar-toggle-btn" id="bar-toggle-btn" onclick="toggleProjectBar()" title="Projektleiste ein-/ausblenden">
     <span id="bar-toggle-icon">▴</span> Projektleiste
   </button>
+  <div id="user-area" style="display:none;align-items:center;gap:12px;font-size:13px;margin-left:12px">
+    <span id="user-label"></span>
+    <a href="/admin" id="admin-link" style="display:none;color:inherit">Benutzer</a>
+    <a href="/passwort" style="color:inherit">Passwort</a>
+    <button class="btn btn-secondary btn-sm" onclick="logout()">Abmelden</button>
+  </div>
 </header>
 
 <!-- Banner für lokalen Server -->
@@ -167,6 +173,12 @@
   <strong>⚙ Server nicht erreichbar</strong>
   &nbsp;– Daten werden nur lokal in Ihrem Browser gespeichert.
   Bitte starten Sie <code>python server.py</code> um die Daten dauerhaft zu sichern.
+</div>
+
+<!-- Banner für Betrachter (Nur-Lese-Rolle) -->
+<div id="readonly-banner" style="display:none;padding:8px 20px;background:#eceff1;color:#55606a;font-size:13px;border-bottom:1px solid #d6dbdf">
+  <strong>Nur-Lese-Zugriff</strong>
+  &nbsp;– Sie sind als Betrachter angemeldet. Änderungen sind nicht möglich, Export steht zur Verfügung.
 </div>
 
 <!-- Project bar -->
@@ -317,6 +329,64 @@ function setSyncStatus(state, msg) {
   txt.textContent = msg;
 }
 
+// ─── Benutzer & Rolle ─────────────────────────────────────────────────────────
+
+let currentUser = null;
+
+function canEdit() { return !!(currentUser && currentUser.can_edit); }
+
+async function loadCurrentUser() {
+  try {
+    const res = await fetch('/api/me');
+    if (res.status === 401 || res.redirected) { window.location.href = '/login'; return; }
+    if (res.status === 403) {
+      // Passwort wurde zurückgesetzt – erst der Wechsel gibt die App wieder frei.
+      window.location.href = '/passwort';
+      return;
+    }
+    if (!res.ok) throw new Error('Profil nicht abrufbar');
+    currentUser = await res.json();
+
+    document.getElementById('user-label').textContent =
+      currentUser.username + ' · ' + currentUser.role_label;
+    document.getElementById('user-area').style.display = 'flex';
+    if (currentUser.is_admin) document.getElementById('admin-link').style.display = '';
+  } catch (err) {
+    // Ohne Server läuft der Editor weiter im localStorage-Modus.
+    console.warn('Benutzerprofil nicht abrufbar:', err);
+  }
+}
+
+function logout() {
+  const form = document.createElement('form');
+  form.method = 'post';
+  form.action = '/logout';
+  const token = document.createElement('input');
+  token.type = 'hidden';
+  token.name = 'csrf_token';
+  token.value = currentUser ? currentUser.csrf_token : '';
+  form.appendChild(token);
+  document.body.appendChild(form);
+  form.submit();
+}
+
+/** Sperrt für Betrachter alle bearbeitenden Bedienelemente.
+ *  Die Rolle wird zusätzlich serverseitig erzwungen – das hier ist reine Bedienführung. */
+function applyRoleRestrictions() {
+  if (!currentUser || currentUser.can_edit) return;
+
+  document.getElementById('readonly-banner').style.display = 'block';
+  document.getElementById('project-bar').querySelectorAll('input, select, button')
+    .forEach(el => { el.disabled = true; });
+
+  const panel = document.getElementById('left-panel');
+  panel.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
+  panel.querySelectorAll('button').forEach(el => {
+    // Export bleibt für Betrachter erlaubt.
+    if (!/export/i.test(el.getAttribute('onclick') || '')) el.disabled = true;
+  });
+}
+
 async function loadDBFromBackend() {
   try {
     setSyncStatus('busy', 'Verbinde mit Server …');
@@ -336,6 +406,8 @@ async function loadDBFromBackend() {
 
 function saveDB(db) {
   dbState = db;
+  // Betrachter speichern nicht – weder auf dem Server noch lokal.
+  if (currentUser && !currentUser.can_edit) return;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(async () => {
     if (serverAvailable) {
@@ -343,9 +415,16 @@ function saveDB(db) {
       try {
         const res = await fetch('/api/data', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': currentUser ? currentUser.csrf_token : ''
+          },
           body: JSON.stringify(db)
         });
+        if (res.status === 403) {
+          setSyncStatus('error', 'Keine Berechtigung zum Speichern');
+          return;
+        }
         if (!res.ok) throw new Error('Save failed');
         setSyncStatus('ok', 'Gespeichert (' + new Date().toLocaleTimeString('de-DE') + ')');
         localStorage.setItem('gantt_db', JSON.stringify(db)); // Backup
@@ -587,6 +666,12 @@ function renderTable() {
 
     gTasks.forEach(t => tbody.appendChild(makeTaskRow(t, true)));
   });
+
+  // Neu erzeugte Zeilen erben die Sperre nicht – für Betrachter erneut setzen.
+  if (currentUser && !currentUser.can_edit) {
+    tbody.querySelectorAll('input, select, button').forEach(el => { el.disabled = true; });
+    tbody.querySelectorAll('tr').forEach(tr => { tr.draggable = false; });
+  }
 }
 
 function makeTaskRow(t, indent) {
@@ -1180,6 +1265,7 @@ function initResizer() {
 
 async function initApp() {
   restoreBarState();
+  await loadCurrentUser();
 
   let data = await loadDBFromBackend();
   if (!data || !data.projects || !data.projects.length) {
@@ -1197,6 +1283,7 @@ async function initApp() {
   }
   
   initResizer();
+  applyRoleRestrictions();
 }
 
 initApp();
