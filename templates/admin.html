@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Benutzerverwaltung – Gantt-Diagramm Editor{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>Neuen Benutzer anlegen</h2>
+  <form method="post" action="{{ url_for('admin_create_user') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div style="display:grid;grid-template-columns:1fr 1fr 160px auto;gap:12px;align-items:end">
+      <div>
+        <label for="username">Benutzername</label>
+        <input type="text" id="username" name="username" autocomplete="off" required>
+      </div>
+      <div>
+        <label for="password">Initialpasswort</label>
+        <input type="text" id="password" name="password" autocomplete="off"
+               minlength="{{ min_length }}" required>
+      </div>
+      <div>
+        <label for="role">Rolle</label>
+        <select id="role" name="role">
+          {% for role in roles %}
+            <option value="{{ role }}" {% if role == 'viewer' %}selected{% endif %}>
+              {{ role_labels[role] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button type="submit" class="btn">Anlegen</button>
+    </div>
+  </form>
+  <p class="hint" style="margin:14px 0 0">
+    Das Initialpasswort ist im Klartext sichtbar, damit Sie es weitergeben können. Der Benutzer
+    muss es beim ersten Login ändern. Mindestens {{ min_length }} Zeichen.
+  </p>
+</div>
+
+<div class="card">
+  <h2>Benutzer</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Benutzername</th>
+        <th style="width:190px">Rolle</th>
+        <th style="width:250px">Passwort zurücksetzen</th>
+        <th style="width:80px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for user in users %}
+      <tr>
+        <td>
+          {{ user['username'] }}
+          {% if user['must_change_password'] %}
+            <span class="badge pending" title="Passwortwechsel steht aus">Initialpasswort</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('admin_set_role', user_id=user['id']) }}"
+                class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <select name="role">
+              {% for role in roles %}
+                <option value="{{ role }}" {% if role == user['role'] %}selected{% endif %}>
+                  {{ role_labels[role] }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-sm btn-secondary">Setzen</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('admin_reset_password', user_id=user['id']) }}"
+                class="inline-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="text" name="password" placeholder="Neues Passwort"
+                   minlength="{{ min_length }}" autocomplete="off" required>
+            <button type="submit" class="btn btn-sm btn-secondary">Zurücksetzen</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" action="{{ url_for('admin_delete_user', user_id=user['id']) }}"
+                onsubmit="return confirm('Benutzer &quot;{{ user['username'] }}&quot; wirklich löschen?')">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-danger">Löschen</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Rollen</h2>
+  <table>
+    <tbody>
+      <tr><td style="width:120px"><strong>Betrachter</strong></td>
+          <td>Kann das Diagramm ansehen und exportieren, aber nichts ändern.</td></tr>
+      <tr><td><strong>Bearbeiter</strong></td>
+          <td>Kann Projekte, Aufgaben und Einstellungen bearbeiten.</td></tr>
+      <tr><td><strong>Admin</strong></td>
+          <td>Wie Bearbeiter, zusätzlich Benutzerverwaltung.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

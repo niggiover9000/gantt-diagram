@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Kein Zugriff – Gantt-Diagramm Editor{% endblock %}
+{% block content %}
+<div class="card" style="max-width:420px;margin:0 auto">
+  <h1>Kein Zugriff</h1>
+  <p class="hint">Für diese Seite fehlen Ihnen die Rechte. Wenden Sie sich an einen Admin,
+  wenn Sie hier arbeiten müssen.</p>
+  <a class="btn" href="{{ url_for('index') }}" style="display:inline-block;text-decoration:none">
+    Zurück zum Diagramm</a>
+</div>
+{% endblock %}

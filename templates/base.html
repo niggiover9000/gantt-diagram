@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Gantt-Diagramm Editor{% endblock %}</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f4f6f8;
+    color: #2c3e50;
+    font-size: 14px;
+  }
+  header {
+    background: #2c3e50;
+    color: #fff;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  header .title { font-weight: 600; }
+  header .spacer { flex: 1; }
+  header a, header button.linklike {
+    color: #d6e4f0;
+    text-decoration: none;
+    font-size: 13px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    padding: 0;
+  }
+  header a:hover, header button.linklike:hover { color: #fff; text-decoration: underline; }
+  main { max-width: 880px; margin: 32px auto; padding: 0 20px; }
+  .card {
+    background: #fff;
+    border: 1px solid #dfe4e8;
+    border-radius: 6px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 16px; }
+  .hint { color: #7f8c8d; font-size: 13px; margin: 0 0 20px; }
+  label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: #55606a; }
+  input[type=text], input[type=password], select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #cbd3d9;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+    background: #fff;
+  }
+  input:focus, select:focus { outline: 2px solid #2980b9; outline-offset: -1px; border-color: #2980b9; }
+  .field { margin-bottom: 14px; }
+  .btn {
+    padding: 8px 14px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    background: #2980b9;
+    color: #fff;
+  }
+  .btn:hover { background: #216a9c; }
+  .btn-sm { padding: 5px 10px; font-size: 13px; }
+  .btn-secondary { background: #7f8c8d; }
+  .btn-secondary:hover { background: #6b7778; }
+  .btn-danger { background: #c0392b; }
+  .btn-danger:hover { background: #a33327; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #e8ecef; vertical-align: middle; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #7f8c8d; }
+  .flash { padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; font-size: 14px; }
+  .flash.error { background: #fdecea; color: #a4332a; border: 1px solid #f5c6c2; }
+  .flash.success { background: #e8f6ee; color: #24714a; border: 1px solid #bfe3cf; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    background: #eceff1;
+    color: #55606a;
+  }
+  .badge.pending { background: #fff3cd; color: #8a6516; }
+  .inline-form { display: flex; gap: 6px; align-items: center; }
+  .inline-form select, .inline-form input { width: auto; flex: 1; min-width: 90px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="title">Gantt-Diagramm Editor</span>
+  <span class="spacer"></span>
+  {% if current_user.is_authenticated %}
+    <span>{{ current_user.username }} · {{ current_user.role_label }}</span>
+    <a href="{{ url_for('index') }}">Diagramm</a>
+    {% if current_user.is_admin %}<a href="{{ url_for('admin') }}">Benutzer</a>{% endif %}
+    <a href="{{ url_for('change_password') }}">Passwort</a>
+    <form method="post" action="{{ url_for('logout') }}" style="display:inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="linklike">Abmelden</button>
+    </form>
+  {% endif %}
+</header>
+<main>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+      <div class="flash {{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>
