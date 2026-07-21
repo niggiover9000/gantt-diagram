@@ -50,7 +50,27 @@ def close_db(exception):
         db.close()
 
 
+def check_db_writable():
+    """Prüft den Datenbankpfad vorab. Bei Bind-Mounts gehört das Host-
+    Verzeichnis oft root, während der Container als UID 1000 läuft – sqlite3
+    meldet dann nur 'unable to open database file'."""
+    directory = os.path.dirname(os.path.abspath(DB_FILE))
+    uid = os.getuid() if hasattr(os, 'getuid') else 1000
+    hint = (f'Der Prozess läuft als UID {uid}. Bei einem Bind-Mount muss das '
+            f'Verzeichnis auf dem Host dieser UID gehören:\n'
+            f'    sudo chown {uid}:{uid} ./gantt-data\n'
+            f'Alternativ statt des Bind-Mounts ein Named Volume verwenden.')
+
+    if not os.path.isdir(directory):
+        raise RuntimeError(f'Das Verzeichnis "{directory}" für GANTT_DB existiert nicht.\n{hint}')
+    if not os.access(directory, os.W_OK | os.X_OK):
+        raise RuntimeError(f'Keine Schreibrechte im Verzeichnis "{directory}" für GANTT_DB.\n{hint}')
+    if os.path.exists(DB_FILE) and not os.access(DB_FILE, os.W_OK):
+        raise RuntimeError(f'Keine Schreibrechte auf die Datenbank "{DB_FILE}".\n{hint}')
+
+
 def init_db():
+    check_db_writable()
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     c.execute('CREATE TABLE IF NOT EXISTS app_state (id INTEGER PRIMARY KEY, json_data TEXT)')
@@ -441,6 +461,16 @@ def configure():
         # verschlüsselt übertragen wird.
         SESSION_COOKIE_SECURE=os.environ.get('GANTT_COOKIE_SECURE', '0') == '1',
     )
+
+    # Hinter einem Reverse Proxy (Traefik, nginx) kommt die Anfrage intern per
+    # HTTP an. Ohne diese Auswertung von X-Forwarded-* baut Flask nach dem Login
+    # http://-Weiterleitungen – die laufen ins Leere, wenn der Proxy nur einen
+    # HTTPS-Entrypoint anbietet. Nur einschalten, wenn wirklich ein Proxy davor
+    # steht: sonst könnte ein Client das Schema selbst vorgeben.
+    if os.environ.get('GANTT_TRUST_PROXY', '0') == '1':
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
     CSRFProtect(app)
     bootstrap_admin()
 

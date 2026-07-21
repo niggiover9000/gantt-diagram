@@ -1,12 +1,9 @@
 services:
   gantt:
     build: .
-    # Alternativ ein vorgebautes Image verwenden:
-    # image: gantt-editor:latest
-    container_name: gantt-editor
+    container_name: niggiover9000/gantt-editor:latest
     restart: unless-stopped
     ports:
-      # Host-Port : Container-Port
       - "8000:8000"
     environment:
       GANTT_DB: /data/gantt.db
@@ -15,7 +12,7 @@ services:
       GANTT_ADMIN_PASSWORD: "adminpassword"
       GANTT_COOKIE_SECURE: "1"
     volumes:
-      - gantt-data:/data
+      - ./gantt-data:/data
 
 volumes:
   gantt-data:
